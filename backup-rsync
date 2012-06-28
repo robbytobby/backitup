@@ -1,16 +1,23 @@
 #!/bin/bash
 #TODO: Checken ob platte ro gemountet ist zu remounten.
 #
+# set path for log-files and logger-opts
+log_opts="-t Backup"
+
 echo -e "\n##### $(date): Starting '$0 $@' #####"
-logger "Starting '$0 $@'"
+logger $log_opts "Starting '$0 $@'"
 
 # load necessary functions
 . backup_functions
 
 # Usage: backup-rsync <HOST> <TASK> <SCHEDULE>
 if [[ $# != 3 ]] ; then
-	error_message "" "Usage $0 <host> <task> <schedule> \n but call was: '$0 $@'" "FATAL"
+	#error_message ' ' "'Usage error'" "FATAL"
+	error_message ' ' "'Usage $0 <host> <task> <schedule> but call was: $0 $@'" "FATAL"
+	#error_message ' ' "Usage $0 <host> <task> <schedule> but call was: $0 $@" "FATAL"
 fi
+echo "test"
+exit
 
 # load settings
 . backup_definitions

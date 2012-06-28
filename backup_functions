@@ -92,29 +92,31 @@ ssh_or_local () {
 }
 
 cmd_error () {
-	write_error $@ 'cmd'
+	write_error "$@" 'cmd'
 }
 
 error_message () {
-	write_error -1 $@ 'msg'
+	write_error -1 "$@" 'msg'
 }
 
 write_error () {
 	local EXIT_STATUS=$1
 	local CALLER=$2
 	local STRING=$3
-	local FATAL=$4
+	local LEVEL=$4
 	local TYPE=$5
 
 	if [[ $EXIT_STATUS != 0 ]]; then
+	echo -e "EXIT:$EXIT_STATUS \n Caller:$CALLER \n String:$STRING \n level:$LEVEL \n type:$TYPE"
 		if [[ $TYPE == 'cmd' ]]; then 
-			echo "$TYPE Error in $0#$CALLER: '$STRING' exited with status $EXIT_STATUS"
-			logger "$TYPE Error in $0#$CALLER: '$STRING' exited with status $EXIT_STATUS"
+			echo "$LEVEL Error in $0#$CALLER: '$STRING' exited with status $EXIT_STATUS"
+			logger "$LEVEL Error in $0#$CALLER: '$STRING' exited with status $EXIT_STATUS"
 		elif [[ $TYPE == 'msg' ]]; then
-			echo "$TYPE Error in $0#$CALLER: $STRING"
-			logger "$TYPE Error in $0#$CALLER: $STRING"
+			echo "$LEVEL Error in $0#$CALLER: $STRING"
+			logger "$LEVEL Error in $2#$CALLER: $STRING"
 		fi
-		if [[ $TYPE == "FATAL" ]]; then 
+		if [[ $LEVEL == "FATAL" ]]; then 
+			echo 'Haha'
 			exit
 		else
 			return

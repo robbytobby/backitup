@@ -2,9 +2,11 @@
 
 # define remote hosts if you want
 # xyz=""
+fawe="fahrradwerkstatt.homelinux.org"
+rage="radgeber.homelinux.org"
 
 # set backup directory path
-bu_path=
+bu_path='/home/backup'
 
 # set path to exclude files
 exclude_path=$(dirname $0)
@@ -22,12 +24,12 @@ if [[ $1 == 'rage'  ]] ; then
 	name="rage"
 	from_host=$rage
 	to_host=$fawe
-	ssh_port=
+	ssh_port=175
 elif [[ $1 == 'fawe' ]] ;then
 	name="fawe"
 	from_host=$fawe
 	to_host=$rage
-	ssh_port=
+	ssh_port=175
 else
 	error_msg "" "Host $1 is not known!!!" "FATAL"
 fi 
