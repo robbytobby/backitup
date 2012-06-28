@@ -51,5 +51,5 @@ execute_remote_or_local "sync"
 [ $mount_ro ] && { remount_bu_disk "ro"; }
 
 # ready
-messeage "" "Finished rsync backup for '$name $task $schedule' at $(date)"
+message "" "Finished rsync backup for '$name $task $schedule' at $(date)"
 
