@@ -1,0 +1,57 @@
+#!/bin/bash
+
+# define remote hosts if you want
+# xyz=""
+
+# set backup directory path
+bu_path=
+
+# set path to exclude files
+exclude_path=$(dirname $0)
+global_excludes="$exclude_path/exclude-global"
+
+# check backup disk for necessary free space [%]
+check_hd_minfree=true
+hd_minfree_percent=20
+
+# mount backup partition read only after backup?
+mount_ro=true
+
+# Host settings
+if [[ $1 == 'rage'  ]] ; then
+	name="rage"
+	from_host=$rage
+	to_host=$fawe
+	ssh_port=
+elif [[ $1 == 'fawe' ]] ;then
+	name="fawe"
+	from_host=$fawe
+	to_host=$rage
+	ssh_port=
+else
+	error_msg "" "Host $1 is not known!!!" "FATAL"
+fi 
+
+# task settings
+if [[ $2 == 'data'  ]] ; then
+	task="data"
+	from_path="/home"
+	bu_dir="/$bu_path/$name/daten"
+	excludes="$exclude_path/exclude-data"
+	task_opt="-x"
+elif [[ $2 == 'system' ]] ;then
+	task="system"
+	from_path="/"
+	bu_dir="/$bu_path/$name/system"
+	excludes="$exclude_path/exclude-system"
+	task_opt=""
+elif [[ $2 == 'db' ]] ;then
+	task='db'
+	from_path="/var/lib/postgresql/db_dumps"
+	bu_dir="/$bu_path/$name/postgres"
+	excludes="$exclude_path/exclude-db"
+	task_opt="-x"
+else
+ 	error_message "" "task $2 is not known!!!" "FATAL"
+fi 
+

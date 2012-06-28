@@ -1,0 +1,124 @@
+#!/bin/bash
+check_disk_space () {
+	# check correct usage
+	if [[ $# != 4 ]]; then
+		error_message "check_disk_space" "Usage: check_disk_space <host> <ssh-port> <path> <free_percent> \n/
+			Call was: 'check_disk_space $@' \n/
+			Not checking for free space" "Warning"
+	else
+		local HOST=$1
+		local PORT=$2
+		local BU_PATH=$3
+		local FREE_PERCENT=$4
+	fi
+
+	# built the command strings to to get percentage of inodes space and inodes
+	local GETPERCENTAGE='s/.* \([0-9]\{1,3\}\)%.*/\1/'
+	local PIPE="| tail -n1 | sed -e '$GETPERCENTAGE'"
+	local KB_USED_COMMAND="df /$BU_PATH $PIPE"
+	local INODE_USED_COMMAND="df -i /$BU_PATH $PIPE"
+
+	local HD_MAXUSED=100
+	let HD_MAXUSED=100-$FREE_PERCENT
+
+	# get used space
+	local HD_KB_USED=$(ssh_or_local "$HOST" "$PORT" "$KB_USED_COMMAND")
+	cmd_error $? "check_disk_space" "[ssh -p $PORT $HOST] $KB_USED_COMMAND" "Warning"
+	# get used inodes
+	local HD_INODE_USED=$(ssh_or_local "$HOST" "$PORT" "$INODE_USED_COMMAND")
+	cmd_error $? "check_disk_space" "[ssh -p $PORT $HOST] $INODE_USED_COMMAND" "Warning"
+	
+	# compare to defined value
+	if [[ $HD_KB_USED -ge $HD_MAXUSED || $HD_INODE_USED -ge $HD_MAXUSED ]] ; then
+		error_message "check_disk_space" "Erorr: Not enough space left in $BU_PATH on $HOST for rsyncing backups!" "FATAL"
+	fi
+}
+
+remount_bu_disk () {
+	# check correct usage
+	if [[ $# != 4 ]]; then
+		error_message "remount_bu_disk" "Usage: remount_bu_disk <host> <ssh-port> <path> <ro/rw> \n /
+				Call was: remount_bu_disk $@ \n Exiting" "FATAL"
+	else
+		local HOST=$1
+		local PORT=$2
+		local BU_PATH=$3
+		local STATE=$4
+	fi
+
+	# built the command strings to to get backup device and fs-type
+	local GET_DEVICE_COMMAND="mount | grep $BU_PATH | cut -d ' ' -f1"
+	local GET_FSTYPE_COMMAND="mount | grep $BU_PATH | cut -d ' ' -f5"
+
+	# get backup device name
+	local BU_DEVICE=$(ssh_or_local "$HOST" "$PORT" "$GET_DEVICE_COMMAND")
+	if [ -z $BU_DEVICE ]; then
+		error_message "remount_bu_disk" "Could not determine backup-device on $HOST" "FATAL"
+	fi
+
+	# get fs-type
+	local FS_TYPE=$(ssh_or_local "$HOST" "$PORT" "$GET_FSTYPE_COMMAND")
+	if [ -z $FS_TYPE ]; then
+		error_message "remount_bu_disk" "Could not determine filesystem of $BU_DEVICE on $HOST" "FATAL"
+	fi
+
+	# built remount command
+	local REMOUNT_COMMAND="mount -t $FS_TYPE -o remount,$STATE $BU_DEVICE $BU_PATH"
+	
+	#remount
+	ssh_or_local "$HOST" "$PORT" "$REMOUNT_COMMAND"
+	cmd_error $? "remount_bu_disk" "[ssh -p $PORT $HOST] $REMOUNT_COMMAND" "FATAL"
+}
+
+ssh_or_local () {
+	#execute a command locally or remote
+	local HOST=$1
+	local PORT=$2
+	local COMMAND=$3
+	local RETVAL=''
+	local LOCALHOST=$(hostname --fqdn)
+
+	if [[ $HOST == $LOCALHOST ]] ; then
+		#local
+		RETVAL=$(eval $COMMAND)
+		EXIT_STATUS=$?
+	else
+		#remote
+		RETVAL=$(ssh -p$PORT $HOST $COMMAND)
+		EXIT_STATUS=$?
+	fi
+	echo $RETVAL
+	return $EXIT_STATUS
+}
+
+cmd_error () {
+	write_error $@ 'cmd'
+}
+
+error_message () {
+	write_error -1 $@ 'msg'
+}
+
+write_error () {
+	local EXIT_STATUS=$1
+	local CALLER=$2
+	local STRING=$3
+	local FATAL=$4
+	local TYPE=$5
+
+	if [[ $EXIT_STATUS != 0 ]]; then
+		if [[ $TYPE == 'cmd' ]]; then 
+			echo "$TYPE Error in $0#$CALLER: '$STRING' exited with status $EXIT_STATUS"
+			logger "$TYPE Error in $0#$CALLER: '$STRING' exited with status $EXIT_STATUS"
+		elif [[ $TYPE == 'msg' ]]; then
+			echo "$TYPE Error in $0#$CALLER: $STRING"
+			logger "$TYPE Error in $0#$CALLER: $STRING"
+		fi
+		if [[ $TYPE == "FATAL" ]]; then 
+			exit
+		else
+			return
+		fi
+	fi
+}
+

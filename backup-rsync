@@ -1,0 +1,73 @@
+#!/bin/bash
+#TODO: Checken ob platte ro gemountet ist zu remounten.
+#
+echo -e "\n##### $(date): Starting '$0 $@' #####"
+logger "Starting '$0 $@'"
+
+# load necessary functions
+. backup_functions
+
+# Usage: backup-rsync <HOST> <TASK> <SCHEDULE>
+if [[ $# != 3 ]] ; then
+	error_message "" "Usage $0 <host> <task> <schedule> \n but call was: '$0 $@'" "FATAL"
+fi
+
+# load settings
+. backup_definitions
+
+# extraopts="--bwlimit=256"
+extraopts=""
+
+# schedule settings
+if [[ $3 == 'daily' || $3 == 'weekly' || $3 == 'monthly' || $3 == 'yearly' ]] ; then
+	schedule=$3
+	bu_dir="$bu_dir/$schedule.0"
+else
+	error_message "" "schedule $3 is not known!!!" "FATAL"
+fi
+
+# check free disk space
+if $check_hd_minfree ; then check_disk_space "$to_host" "$ssh_port" "$bu_path" "$hd_minfree_percent"; fi
+
+# remount backup disk rw if necessary
+if $mount_ro ; then remount_bu_disk "$to_host" "$ssh_port" "$bu_path" "rw"; fi
+
+# create directory if necessary
+ssh_or_local $to_host $ssh_port "test -d $bu_dir"
+if [[ $? != 0 ]]; then 
+	ssh_or_local $to_host $ssh_port "mkdir -p $bu_dir"
+	cmd_error $? "" "[ssh -p $ssh_port $to_host] mkdir -p $bu_dir"
+fi
+
+# built destination and source string for rsync
+localhost=$(hostname --fqdn)
+from=$from_path
+if [[ $from_host != $localhost ]]; then from="$from_host:$from_path" ; fi
+
+to=$bu_dir
+if [[ $to_host != $localhost ]]; then to="$to_host:$bu_dir" ; fi
+
+# The rsync job
+rsync  -avz --numeric-ids --rsh="ssh -p$ssh_port" --delete --delete-excluded   \
+        --exclude-from="$excludes" --exclude-from="$global_excludes" $extraopts $task_opt $from $to
+
+# check exit status:
+# 0 = okay 
+# 24 harmless (e.g. files being changed during run-time)
+if ! [ $? = 24 -o $? = 0 ] ; then
+	error_message "" "rsync for '$name $task $schedule' finished with errors!" "CRITICAL"
+fi
+
+# save backup date
+ssh_or_local $to_host $ssh_port "touch $bu_dir"
+
+# just to be sure
+ssh_or_local $to_host $ssh_port "sync"
+
+# remount backup disk if necessary
+if $mount_ro ; then remount_bu_disk "$to_host" "$ssh_port" "$bu_path" "ro"; fi
+
+# ready
+echo "$0 $(date): Finished rsync backup for '$name $task $schedule'"
+logger "$0 Finished rsync backup for '$name $task $schedule'"
+

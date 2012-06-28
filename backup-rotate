@@ -1,0 +1,127 @@
+#!/bin/bash
+# Usage: backup-rsync <HOST> <TASK> <SCHEDULE [d<NUM>:w<NUM>:m<NUM>:y<NUM>]
+
+echo -e "\n##### $(date): Starting '$0 $@' #####"
+logger "Starting '$0 $@'"
+
+# load necessary functions
+. backup_functions
+
+# load settings
+. backup_definitions
+
+# schedule settings
+daily=false
+weekly=false
+monthly=false
+yearly=false
+for topic in $(echo $3 | tr ":" "\n"); do
+	schedule=${topic:0:1}
+	num=${topic:1}
+	if [[ $schedule == 'd' ]]; then
+		daily=true
+		num_daily=$num
+	elif [[ $schedule == 'w' ]]; then
+		weekly=true
+		num_weekly=$num
+	elif [[ $schedule == 'm' ]]; then
+		monthly=true
+		num_monthly=$num
+	elif [[ $schedule == 'y' ]]; then
+		yearly=true
+		num_yearly=$num
+	else
+		error_message $0 "Error: Unknown schedule $schedule" "FATAL"
+	fi
+done
+timestamp="$bu_dir/.timestamp"
+
+# shift snapshot to next interval e.g. from daily.7 to weekly.0
+shiftit() {
+	if [[ $# != 2 ]]; then
+		error_message "$0#shiftit" "Error in backup-rotate: \nCall should be : shiftit OLD NEW \nbut was : shiftit $@"
+	fi
+	local LAST=$bu_dir/$1
+	local TO=$bu_dir/$2
+	if [ -d $LAST ]; then
+		touch $timestamp -r $LAST
+		mv $LAST $TO
+		cmd_error $? "$0#shiftit" "mv $LAST $TO" "FATAL"
+		touch $TO -r $timestamp
+	fi
+}
+
+# the main rotation
+rotate () {
+	local SCHEDULE=$1
+	local BU_BASE="$bu_dir/$SCHEDULE"
+	local NUM=$2
+
+	# delete the oldest snapshot if necessary
+	local TO_RM="$BU_BASE.$NUM"
+	if [ -d $TO_RM ] ; then 
+		rm -rf $TO_RM
+		cmd_error $? "$0#rotate" "rm $TO_RM" "FATAL"
+	fi
+ 
+	# shift all other snapshots (increment the name)
+	local OLD=$NUM
+	while (( $OLD >= 0 )); do
+		if [ -d $BU_BASE.$OLD ] ; then
+	        	local NEW=$[ $OLD + 1 ]
+			# save the timestamp
+			touch $bu_dir/.timestamp -r $BU_BASE.$OLD
+			mv $BU_BASE.$OLD $BU_BASE.$NEW
+			cmd_error $? "$0#rotate" "mv $BU_BASE.$OLD $BU_BASE.$NEW" "FATAL"
+			# reset the timestamp
+			touch $BU_BASE.$NEW -r $bu_dir/.timestamp
+		fi
+		let OLD=$OLD-1
+	done
+	
+    # shift snapshot to next interval e.g. from daily.7 to weekly.0
+	if $monthly && [[ $SCHEDULE == "yearly" ]]; then
+		shiftit "monthly.$num_monthly" "$SCHEDULE.0"
+	elif $weekly && [[ $SCHEDULE == "yearly" || $SCHEDULE == "monthly" ]]; then 
+		shiftit "weekly.$num_weekly" "$SCHEDULE.0"
+	elif $daily &&  [[ $SCHEDULE == "yearly" || $SCHEDULE == "monthly" || $SCHEDULE == "weekly" ]]; then
+		shiftit "daily.$num_daily" "$SCHEDULE.0"
+	else
+	# copy newest snapshot via hardlinks from level-1 to level-0
+		local LAST=$bu_dir/$SCHEDULE.1
+		local TO=$bu_dir/$SCHEDULE.0
+		if [ -d $LAST ] ; then
+			touch $timestamp -r $LAST
+			cp -al $LAST $TO
+			cmd_error $? "$0#rotate" "cp $LAST $TO" "FATAL"
+			touch $TO -r $timestamp
+		fi
+	fi
+}
+
+# check for free disk space
+if $check_hd_minfree ; then check_disk_space "$to_host" "$ssh_port" "$bu_path" "$hd_minfree_percent"; fi
+
+# remount disk rw if necessary
+if $mount_ro ; then remount_bu_disk "$to_host" "$ssh_port" "$bu_path" "rw"; fi
+
+
+# create backup directory if necessary
+ssh_or_local $to_host $ssh_port "test -d $bu_dir"
+if [[ $? != 0 ]]; then 
+	ssh_or_local $to_host $ssh_port "mkdir -p $bu_dir" 
+	cmd_error $? "" "[ssh -p $ssh_port $to_host] mkdir -p $bu_dir"
+fi
+
+# rotate!!!
+if $yearly && [[ $(date +%j) == 1 ]] ; then rotate "yearly" $num_yearly ; fi
+if $monthly &&  [[ $(date +%d) == 1 ]] ; then rotate "monthly" $num_monthly ; fi
+if $weekly && [[ $(date +%w) == 0 ]] ; then rotate "weekly" $num_weekly; fi
+if $daily ; then rotate "daily" $num_daily; fi
+
+# remount disk ro if necessary
+if $mount_ro ; then remount_bu_disk "$to_host" "$ssh_port" "$bu_path" "ro"; fi
+
+# Ready
+echo "$0 $(date): Finished backup rotation for '$name $task $schedule'"
+logger "$0 Finished rsync backup for '$name $task $schedule'"

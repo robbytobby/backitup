@@ -1,0 +1,4 @@
+/usr/local/sbin/backup-rsync rage db daily #&>>/var/log/backup/rage-db-daily.log
+/usr/local/sbin/backup-rsync rage data daily #&>>/var/log/backup/rage-data-daily.log
+/usr/local/sbin/backup-rsync fawe data daily #&>>/var/log/backup/fawe-data-daily.log
+
