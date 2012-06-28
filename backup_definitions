@@ -13,63 +13,71 @@ localhost=$(hostname --fqdn)
 # set backup directory path
 bu_path='/home/backup'
 
-# set path to exclude files
+# set path to the exclude files; defaults to this directory
 exclude_path=$(dirname $0)
 global_excludes="$exclude_path/exclude-global"
 
 # check backup disk for necessary free space [%]
-check_hd_minfree=true
+check_minimal_disk_space=true
 hd_minfree_percent=20
 
 # mount backup partition read only after backup?
 mount_ro=true
 
 # Host settings
-if [[ $1 == 'rage'  ]] ; then
-	name="rage"
-	from_host=$rage
-	to_host=$fawe
-	ssh_port=175
-elif [[ $1 == 'fawe' ]] ;then
-	name="fawe"
-	from_host=$fawe
-	to_host=$rage
-	ssh_port=175
-elif [[ $1 == 'uni' ]] ;then
-	name="uni"
-	from_host=$uni
-	to_host=$kos2
-	ssh_port=22
-else
-	message "" "Host '$1' is not known!!!" "FATAL"
-fi 
+name=$1
+ssh_port=22
+case "$name" in
+	# NAME)
+	# 	from_host= 	# FQDN even if it's localhost
+	# 	to_host= 	# s.a.
+	# 	ssh_port=       # optional
+	# 	;;
+	rage)
+		from_host=$rage
+		to_host=$fawe
+		ssh_port=175
+		;;
+	fawe)
+		from_host=$fawe
+		to_host=$rage
+		ssh_port=175
+		;;
+	uni)
+		from_host=$uni
+		to_host=$kos2
+		;;
+	*)	message "" "Host '$name' is not known!!!" "FATAL" ;;
+esac
 
-# task settings
-if [[ $2 == 'data'  ]] ; then
-	task="data"
-	from_path="/home"
-	bu_dir="/$bu_path/$name/daten"
-	excludes="$exclude_path/exclude-data"
-	task_opt="-x"
-elif [[ $2 == 'system' ]] ;then
-	task="system"
-	from_path="/"
-	bu_dir="/$bu_path/$name/system"
-	excludes="$exclude_path/exclude-system"
-	task_opt=""
-elif [[ $2 == 'db' ]] ;then
-	task='db'
-	from_path="/var/lib/postgresql/db_dumps"
-	bu_dir="/$bu_path/$name/postgres"
-	excludes="$exclude_path/exclude-db"
-	task_opt="-x"
-elif [[ $2 == 'test' ]] ;then
-	task='test'
-	from_path="/home/widu/bu-test"
-	bu_dir="/$bu_path/$name/test"
-	excludes="$exclude_path/exclude-db"
-	task_opt="-x"
-else
- 	message "" "task $2 is not known!!!" "FATAL"
-fi 
+# default settings, override each value in the following case statement
+task=$2
+bu_dir="/$bu_path/$name/$task"
+excludes="$exclude_path/exclude-$task"
+rsync_opts=""
+case "$task" in
+	# NAME)
+	# 	from_path= 	# backup src directory 
+	# 	bu_dir= 	# optional, backup dest directory on backup_host
+	# 	excludes= 	# optional, exclude file for the job
+	# 	rsync_opts= 	# optional
+	# 	;;
+	daten)
+		from_path="/home"
+		rsync_opts="-x"
+		;;
+	system)
+		from_path="/"
+		rsync_opts=""
+		;;
+	postgres)
+		from_path="/var/lib/postgresql/db_dumps"
+		rsync_opts="-x"
+		;;
+	test)
+		from_path="/home/widu/bu-test"
+		rsync_opts="-x"
+		;;
+	*)	message "" "task $2 is not known!!!" "FATAL" ;;
+esac
 

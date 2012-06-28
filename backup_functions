@@ -1,7 +1,25 @@
 #!/bin/bash
-check_disk_space () {
-	if ! $check_hd_minfree; then return; fi
+execute_remote_or_local () {
+	#execute a command locally or remote
+	local command=$1
+	local return_value=''
+	local exit_status=''
 
+	if [[ $to_host == $localhost ]] ; then
+		#local
+		return_value=$(eval $command)
+		exit_status=$?
+	else
+		#remote
+		return_value=$(ssh -p$ssh_port $to_host $command)
+		exit_status=$?
+	fi
+
+	echo $return_value
+	return $exit_status
+}
+
+check_disk_space () {
 	# built the command strings to to get percentage of inodes space and inodes
 	local pipe="| tail -n1 | sed -e 's/.* \([0-9]\{1,3\}\)%.*/\1/'"
 	local kb_used_command="df $bu_path $pipe"
@@ -9,11 +27,11 @@ check_disk_space () {
 	local hd_maxused=$((100-$hd_minfree_percent))
 
 	# get used space
-	local hd_kb_used=$(ssh_or_local "$kb_used_command")
-	cmd_error $? "check_disk_space" "[ssh -p $ssh_port $to_host] $kb_used_command" "Warning"
+	local hd_kb_used=$(execute_remote_or_local "$kb_used_command")
+	ssh_error_check $? "check_disk_space" "$kb_used_command" "Warning"
 	# get used inodes
-	local hd_inode_used=$(ssh_or_local "$inode_used_command")
-	cmd_error $? "check_disk_space" "[ssh -p $ssh_port $to_host] $inode_used_command" "Warning"
+	local hd_inode_used=$(execute_remote_or_local "$inode_used_command")
+	ssh_error_check $? "check_disk_space" "$inode_used_command" "Warning"
 	
 	# compare to defined value
 	if [[ $hd_kb_used -ge $hd_maxused || $hd_inode_used -ge $hd_maxused ]] ; then
@@ -23,64 +41,48 @@ check_disk_space () {
 
 remount_bu_disk () {
 	# check correct usage
-	if [[ $# != 1 ]]; then
-		message "remount_bu_disk" "Usage: remount_bu_disk <ro/rw> Call was: remount_bu_disk $@" "FATAL"
-	fi
+	[ $# != 1 ] && { message "remount_bu_disk" "Usage: remount_bu_disk <ro/rw> Call was: remount_bu_disk $(echo $@)" "FATAL"; }
 	local remount_state=$1
 
 	# get the mtab entry for the backup device
-	local mtab_line=$(ssh_or_local "mount | grep $bu_path")
-	cmd_error $? "remount_bu_disk" "[ssh -p $ssh_port $to_host] mount | grep $bu_path" "FATAL"
+	local mtab_line=$(execute_remote_or_local "mount | grep $bu_path")
+	ssh_error_check $? "remount_bu_disk" "mount | grep $bu_path" "FATAL"
 
 	# get the current mount state
 	local mount_state=$(echo $mtab_line | sed -e 's/.*(\(r[ow]\)).*/\1/')
 
-	# remount rw if necessary
-	if [[ $remount_state == 'rw' && $mount_state == 'rw' ]]; then return; fi
-	# remount ro if wanted
-	if [[ $remount_state == 'ro' && ! $mount_ro ]]; then return; fi
+	# return on remount rw if device is allready rw
+	[ $remount_state == 'rw' && $mount_state == 'rw' ] && { return; }
 
 	# get device name
 	local bu_device=$(echo $mtab_line | cut -d' ' -f1)
-	if [ -z $bu_device ]; then
-		message "remount_bu_disk" "Could not determine backup-device on $to_host" "FATAL"
-	fi
+	[ -z $bu_device ] && { message "remount_bu_disk" "Could not determine backup-device on $to_host" "FATAL"; }
 
 	# get file system
 	local fs_type=$(echo $mtab_line | cut -d' ' -f5)
-	if [ -z $fs_type ]; then
-		message "remount_bu_disk" "Could not determine filesystem of $bu_device on $to_host" "FATAL"
-	fi
+	[ -z $fs_type ] && { message "remount_bu_disk" "Could not determine filesystem of $bu_device on $to_host" "FATAL"; }
 
 	# built remount command
 	local remount_command="mount -t $fs_type -o remount,$remount_state $bu_device $bu_path"
 	
 	#remount
-	ssh_or_local "$remount_command"
-	cmd_error $? "remount_bu_disk" "[ssh -p $ssh_port $to_host] $remount_command" "FATAL"
+	execute_remote_or_local "$remount_command"
+	ssh_error_check $? "remount_bu_disk" "$remount_command" "FATAL"
 }
-
-ssh_or_local () {
-	#execute a command locally or remote
-	local command=$1
-	local retval=''
-	local exit_status=''
-
-	if [[ $to_host == $localhost ]] ; then
-		#local
-		retval=$(eval $command)
-		exit_status=$?
-	else
-		#remote
-		retval=$(ssh -p$ssh_port $to_host $command)
-		exit_status=$?
+create_backup_directory () {
+	execute_remote_or_local "test -d $bu_dir"
+	if [[ $? != 0 ]]; then 
+		execute_remote_or_local "mkdir -p $bu_dir" 
+		ssh_error_check $? "" "mkdir -p $bu_dir" "FATAL"
 	fi
-	echo $retval
-	return $exit_status
 }
 
-cmd_error () {
+
+error_check () {
 	write_error "$@" 'cmd'
+}
+ssh_error_check () {
+	write_error "$@" 'ssh-cmd'
 }
 
 message () {
@@ -89,31 +91,27 @@ message () {
 
 write_error () {
 	local exit_status=$1
-	local caller=$2
-	local string=$3
+	local func_name=$2
+	local msg=$3
 	local level=$4
-	local type=$5
+	local msg_type=$5
 
-	if [[ $exit_status != 0 ]]; then
-		if [ -z $caller ]; then
-			caller=$0
-		else
-			caller=$0#$caller
-		fi
+	[ $exit_status = 0 ] && return
 
-		if [[ $type == 'cmd' ]]; then 
-			echo -e "$level $caller: '$string' exited with status $exit_status"
-			logger -t $log_tag "$level $caller: '$string' exited with status $exit_status"
-		elif [[ $type == 'msg' ]]; then
-			echo -e "$level $caller: $string"
-			logger -t $log_tag "$level $caller: $string"
-		fi
-
-		if [[ $level == "FATAL" ]]; then 
-			exit
-		else
-			return
-		fi
+	if [ -z $func_name ]; then
+		func_name=$0
+	else
+		func_name=$0#$func_name
 	fi
+
+	case "$msg_type" in
+		cmd)     log_msg="$level $func_name: '$msg' exited with status $exit_status" ;;
+		ssh-cmd) log_msg="$level $func_name: '[ssh -p $ssh_port $to_host] $msg' exited with status $exit_status" ;;
+		msg)     log_msg="$level $func_name: $msg" ;;
+	esac
+
+	echo -e $log_msg
+	logger -t $log_tag $log_msg
+	[ $level = "FATAL" ] &&  exit
 }
 

@@ -1,6 +1,6 @@
 #!/bin/bash
-#TODO: Checken ob platte ro gemountet ist zu remounten.
 #
+# tag for log entries in syslog
 log_tag="Backup"
 
 # load necessary functions
@@ -9,15 +9,13 @@ log_tag="Backup"
 message " " "Starting '$0 $(echo $@)' on $(date)" "INFO"
 
 # Usage: backup-rsync <HOST> <TASK> <SCHEDULE>
-if [[ $# != 3 ]] ; then
-	message " " "Usage '$0 <host> <task> <schedule>' but call was: '$0 $(echo $@)'" "FATAL"
-fi
+[ $# != 3 ] && { message " " "Usage '$0 <host> <task> <schedule>' but call was: '$0 $(echo $@)'" "FATAL"; }
 
 # load settings
 . backup_definitions
 
-# extraopts="--bwlimit=256"
-extraopts=""
+# extra_rsync_opts="--bwlimit=256"
+extra_rsync_opts="-n"
 
 # schedule settings
 if [[ $3 == 'daily' || $3 == 'weekly' || $3 == 'monthly' || $3 == 'yearly' ]] ; then
@@ -27,48 +25,31 @@ else
 	message "" "schedule '$3' is not known!!!" "FATAL"
 fi
 
-# check free disk space
-check_disk_space
-
-# remount backup disk rw if necessary
+# check for free disk space, remount backup diks rw and create backup directory if necessary
+[ $check_minimal_disk_space ] && { check_disk_space; }
 remount_bu_disk "rw"
-
-# create directory if necessary
-ssh_or_local "test -d $bu_dir"
-if [[ $? != 0 ]]; then 
-	ssh_or_local "mkdir -p $bu_dir"
-	cmd_error $? "" "[ssh -p $ssh_port $to_host] mkdir -p $bu_dir"
-fi
+create_backup_directory
 
 # built destination and source string for rsync
-localhost=$(hostname --fqdn)
-from=$from_path
-if [[ $from_host != $localhost ]]; then from="$from_host:$from_path" ; fi
-
-to=$bu_dir
-if [[ $to_host != $localhost ]]; then to="$to_host:$bu_dir" ; fi
+if [ $from_host != $localhost ]; then from="$from_host:$from_path"; else from=$from_path; fi
+if [ $to_host != $localhost ]; then to="$to_host:$bu_dir"; else to=$bu_dir; fi
 
 # The rsync job
 rsync  -avz --numeric-ids --rsh="ssh -p$ssh_port" --delete --delete-excluded   \
-        --exclude-from="$excludes" --exclude-from="$global_excludes" $extraopts $task_opt $from $to
+        --exclude-from="$excludes" --exclude-from="$global_excludes" $extra_rsync_opts $rsync_opts $from $to
 
-# check exit status:
-# 0 = okay 
-# 24 harmless (e.g. files being changed during run-time)
-if ! [ $? = 24 -o $? = 0 ] ; then
-	message "" "rsync for '$name $task $schedule' finished with errors!" "CRITICAL"
-fi
+# check exit status: 0 = okay, 24 harmless (e.g. files being changed during run-time)
+ ! [ $? = 24 -o $? = 0 ] && { message "" "rsync for '$name $task $schedule' finished with errors!" "CRITICAL"; }
 
 # save backup date
-ssh_or_local "touch $bu_dir"
+execute_remote_or_local "touch $bu_dir"
 
 # just to be sure
-ssh_or_local "sync"
+execute_remote_or_local "sync"
 
 # remount backup disk ro
-remount_bu_disk "ro"
+[ $mount_ro ] && { remount_bu_disk "ro"; }
 
 # ready
-echo "$0 $(date): Finished rsync backup for '$name $task $schedule'"
-logger -t $log_tag "$0 Finished rsync backup for '$name $task $schedule'"
+messeage "" "Finished rsync backup for '$name $task $schedule' at $(date)"
 
