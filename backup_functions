@@ -113,7 +113,6 @@ write_error () {
 			CALLER=$0#$CALLER
 		fi
 
-		echo -e "EXIT:$EXIT_STATUS \n Caller:$CALLER \n String:$STRING \n level:$LEVEL \n type:$TYPE"
 		if [[ $TYPE == 'cmd' ]]; then 
 			echo -e "$LEVEL Error in $CALLER: '$STRING' exited with status $EXIT_STATUS"
 			logger -t $log_tag "$LEVEL Error in $CALLER: '$STRING' exited with status $EXIT_STATUS"
