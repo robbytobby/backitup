@@ -1,18 +1,16 @@
 #!/bin/bash
 #TODO: Checken ob platte ro gemountet ist zu remounten.
 #
-# set path for log-files and logger-opts
 log_tag="Backup"
-
-echo -e "\n##### $(date): Starting '$0 $@' #####"
-logger -t $log_tag "Starting '$0 $@'"
 
 # load necessary functions
 . backup_functions
 
+message " " "Starting '$0 $(echo $@)' on $(date)" "INFO"
+
 # Usage: backup-rsync <HOST> <TASK> <SCHEDULE>
 if [[ $# != 3 ]] ; then
-	error_message " " "Usage $0 <host> <task> <schedule> but call was: $0 $(echo $@)" "FATAL"
+	message " " "Usage '$0 <host> <task> <schedule>' but call was: '$0 $(echo $@)'" "FATAL"
 fi
 
 # load settings
@@ -26,19 +24,19 @@ if [[ $3 == 'daily' || $3 == 'weekly' || $3 == 'monthly' || $3 == 'yearly' ]] ; 
 	schedule=$3
 	bu_dir="$bu_dir/$schedule.0"
 else
-	error_message "" "schedule '$3' is not known!!!" "FATAL"
+	message "" "schedule '$3' is not known!!!" "FATAL"
 fi
 
 # check free disk space
-if $check_hd_minfree ; then check_disk_space "$to_host" "$ssh_port" "$bu_path" "$hd_minfree_percent"; fi
+check_disk_space
 
 # remount backup disk rw if necessary
-if $mount_ro ; then remount_bu_disk "$to_host" "$ssh_port" "$bu_path" "rw"; fi
+remount_bu_disk "rw"
 
 # create directory if necessary
-ssh_or_local $to_host $ssh_port "test -d $bu_dir"
+ssh_or_local "test -d $bu_dir"
 if [[ $? != 0 ]]; then 
-	ssh_or_local $to_host $ssh_port "mkdir -p $bu_dir"
+	ssh_or_local "mkdir -p $bu_dir"
 	cmd_error $? "" "[ssh -p $ssh_port $to_host] mkdir -p $bu_dir"
 fi
 
@@ -58,17 +56,17 @@ rsync  -avz --numeric-ids --rsh="ssh -p$ssh_port" --delete --delete-excluded   \
 # 0 = okay 
 # 24 harmless (e.g. files being changed during run-time)
 if ! [ $? = 24 -o $? = 0 ] ; then
-	error_message "" "rsync for '$name $task $schedule' finished with errors!" "CRITICAL"
+	message "" "rsync for '$name $task $schedule' finished with errors!" "CRITICAL"
 fi
 
 # save backup date
-ssh_or_local $to_host $ssh_port "touch $bu_dir"
+ssh_or_local "touch $bu_dir"
 
 # just to be sure
-ssh_or_local $to_host $ssh_port "sync"
+ssh_or_local "sync"
 
-# remount backup disk if necessary
-if $mount_ro ; then remount_bu_disk "$to_host" "$ssh_port" "$bu_path" "ro"; fi
+# remount backup disk ro
+remount_bu_disk "ro"
 
 # ready
 echo "$0 $(date): Finished rsync backup for '$name $task $schedule'"

@@ -1,127 +1,115 @@
 #!/bin/bash
 check_disk_space () {
-	# check correct usage
-	if [[ $# != 4 ]]; then
-		error_message "check_disk_space" "Usage: check_disk_space <host> <ssh-port> <path> <free_percent> \n/
-			Call was: 'check_disk_space $@' \n/
-			Not checking for free space" "Warning"
-	else
-		local HOST=$1
-		local PORT=$2
-		local BU_PATH=$3
-		local FREE_PERCENT=$4
-	fi
+	if ! $check_hd_minfree; then return; fi
 
 	# built the command strings to to get percentage of inodes space and inodes
-	local GETPERCENTAGE='s/.* \([0-9]\{1,3\}\)%.*/\1/'
-	local PIPE="| tail -n1 | sed -e '$GETPERCENTAGE'"
-	local KB_USED_COMMAND="df /$BU_PATH $PIPE"
-	local INODE_USED_COMMAND="df -i /$BU_PATH $PIPE"
-
-	local HD_MAXUSED=100
-	let HD_MAXUSED=100-$FREE_PERCENT
+	local pipe="| tail -n1 | sed -e 's/.* \([0-9]\{1,3\}\)%.*/\1/'"
+	local kb_used_command="df $bu_path $pipe"
+	local inode_used_command="df -i $bu_path $pipe"
+	local hd_maxused=$((100-$hd_minfree_percent))
 
 	# get used space
-	local HD_KB_USED=$(ssh_or_local "$HOST" "$PORT" "$KB_USED_COMMAND")
-	cmd_error $? "check_disk_space" "[ssh -p $PORT $HOST] $KB_USED_COMMAND" "Warning"
+	local hd_kb_used=$(ssh_or_local "$kb_used_command")
+	cmd_error $? "check_disk_space" "[ssh -p $ssh_port $to_host] $kb_used_command" "Warning"
 	# get used inodes
-	local HD_INODE_USED=$(ssh_or_local "$HOST" "$PORT" "$INODE_USED_COMMAND")
-	cmd_error $? "check_disk_space" "[ssh -p $PORT $HOST] $INODE_USED_COMMAND" "Warning"
+	local hd_inode_used=$(ssh_or_local "$inode_used_command")
+	cmd_error $? "check_disk_space" "[ssh -p $ssh_port $to_host] $inode_used_command" "Warning"
 	
 	# compare to defined value
-	if [[ $HD_KB_USED -ge $HD_MAXUSED || $HD_INODE_USED -ge $HD_MAXUSED ]] ; then
-		error_message "check_disk_space" "Erorr: Not enough space left in $BU_PATH on $HOST for rsyncing backups!" "FATAL"
+	if [[ $hd_kb_used -ge $hd_maxused || $hd_inode_used -ge $hd_maxused ]] ; then
+		message "check_disk_space" "Erorr: Not enough space left in $bu_path on $to_host for rsyncing backups!" "FATAL"
 	fi
 }
 
 remount_bu_disk () {
 	# check correct usage
-	if [[ $# != 4 ]]; then
-		error_message "remount_bu_disk" "Usage: remount_bu_disk <host> <ssh-port> <path> <ro/rw> \n /
-				Call was: remount_bu_disk $@ \n Exiting" "FATAL"
-	else
-		local HOST=$1
-		local PORT=$2
-		local BU_PATH=$3
-		local STATE=$4
+	if [[ $# != 1 ]]; then
+		message "remount_bu_disk" "Usage: remount_bu_disk <ro/rw> Call was: remount_bu_disk $@" "FATAL"
+	fi
+	local remount_state=$1
+
+	# get the mtab entry for the backup device
+	local mtab_line=$(ssh_or_local "mount | grep $bu_path")
+	cmd_error $? "remount_bu_disk" "[ssh -p $ssh_port $to_host] mount | grep $bu_path" "FATAL"
+
+	# get the current mount state
+	local mount_state=$(echo $mtab_line | sed -e 's/.*(\(r[ow]\)).*/\1/')
+
+	# remount rw if necessary
+	if [[ $remount_state == 'rw' && $mount_state == 'rw' ]]; then return; fi
+	# remount ro if wanted
+	if [[ $remount_state == 'ro' && ! $mount_ro ]]; then return; fi
+
+	# get device name
+	local bu_device=$(echo $mtab_line | cut -d' ' -f1)
+	if [ -z $bu_device ]; then
+		message "remount_bu_disk" "Could not determine backup-device on $to_host" "FATAL"
 	fi
 
-	# built the command strings to to get backup device and fs-type
-	local GET_DEVICE_COMMAND="mount | grep $BU_PATH | cut -d ' ' -f1"
-	local GET_FSTYPE_COMMAND="mount | grep $BU_PATH | cut -d ' ' -f5"
-
-	# get backup device name
-	local BU_DEVICE=$(ssh_or_local "$HOST" "$PORT" "$GET_DEVICE_COMMAND")
-	if [ -z $BU_DEVICE ]; then
-		error_message "remount_bu_disk" "Could not determine backup-device on $HOST" "FATAL"
-	fi
-
-	# get fs-type
-	local FS_TYPE=$(ssh_or_local "$HOST" "$PORT" "$GET_FSTYPE_COMMAND")
-	if [ -z $FS_TYPE ]; then
-		error_message "remount_bu_disk" "Could not determine filesystem of $BU_DEVICE on $HOST" "FATAL"
+	# get file system
+	local fs_type=$(echo $mtab_line | cut -d' ' -f5)
+	if [ -z $fs_type ]; then
+		message "remount_bu_disk" "Could not determine filesystem of $bu_device on $to_host" "FATAL"
 	fi
 
 	# built remount command
-	local REMOUNT_COMMAND="mount -t $FS_TYPE -o remount,$STATE $BU_DEVICE $BU_PATH"
+	local remount_command="mount -t $fs_type -o remount,$remount_state $bu_device $bu_path"
 	
 	#remount
-	ssh_or_local "$HOST" "$PORT" "$REMOUNT_COMMAND"
-	cmd_error $? "remount_bu_disk" "[ssh -p $PORT $HOST] $REMOUNT_COMMAND" "FATAL"
+	ssh_or_local "$remount_command"
+	cmd_error $? "remount_bu_disk" "[ssh -p $ssh_port $to_host] $remount_command" "FATAL"
 }
 
 ssh_or_local () {
 	#execute a command locally or remote
-	local HOST=$1
-	local PORT=$2
-	local COMMAND=$3
-	local RETVAL=''
-	local LOCALHOST=$(hostname --fqdn)
+	local command=$1
+	local retval=''
+	local exit_status=''
 
-	if [[ $HOST == $LOCALHOST ]] ; then
+	if [[ $to_host == $localhost ]] ; then
 		#local
-		RETVAL=$(eval $COMMAND)
-		EXIT_STATUS=$?
+		retval=$(eval $command)
+		exit_status=$?
 	else
 		#remote
-		RETVAL=$(ssh -p$PORT $HOST $COMMAND)
-		EXIT_STATUS=$?
+		retval=$(ssh -p$ssh_port $to_host $command)
+		exit_status=$?
 	fi
-	echo $RETVAL
-	return $EXIT_STATUS
+	echo $retval
+	return $exit_status
 }
 
 cmd_error () {
 	write_error "$@" 'cmd'
 }
 
-error_message () {
+message () {
 	write_error -1 "$@" 'msg'
 }
 
 write_error () {
-	local EXIT_STATUS=$1
-	local CALLER=$2
-	local STRING=$3
-	local LEVEL=$4
-	local TYPE=$5
+	local exit_status=$1
+	local caller=$2
+	local string=$3
+	local level=$4
+	local type=$5
 
-	if [[ $EXIT_STATUS != 0 ]]; then
-		if [ -z $CALLER ]; then
-			CALLER=$0
+	if [[ $exit_status != 0 ]]; then
+		if [ -z $caller ]; then
+			caller=$0
 		else
-			CALLER=$0#$CALLER
+			caller=$0#$caller
 		fi
 
-		if [[ $TYPE == 'cmd' ]]; then 
-			echo -e "$LEVEL Error in $CALLER: '$STRING' exited with status $EXIT_STATUS"
-			logger -t $log_tag "$LEVEL Error in $CALLER: '$STRING' exited with status $EXIT_STATUS"
-		elif [[ $TYPE == 'msg' ]]; then
-			echo -e "$LEVEL Error in $CALLER: $STRING"
-			logger -t $log_tag "$LEVEL Error in $CALLER: $STRING"
+		if [[ $type == 'cmd' ]]; then 
+			echo -e "$level $caller: '$string' exited with status $exit_status"
+			logger -t $log_tag "$level $caller: '$string' exited with status $exit_status"
+		elif [[ $type == 'msg' ]]; then
+			echo -e "$level $caller: $string"
+			logger -t $log_tag "$level $caller: $string"
 		fi
 
-		if [[ $LEVEL == "FATAL" ]]; then 
+		if [[ $level == "FATAL" ]]; then 
 			exit
 		else
 			return

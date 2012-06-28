@@ -4,6 +4,11 @@
 # xyz=""
 fawe="fahrradwerkstatt.homelinux.org"
 rage="radgeber.homelinux.org"
+kos2="pc2-kos2.physchem.uni-freiburg.de"
+uni="pc2-77.physchem.uni-freiburg.de"
+
+# automatic definition of localhost
+localhost=$(hostname --fqdn)
 
 # set backup directory path
 bu_path='/home/backup'
@@ -30,8 +35,13 @@ elif [[ $1 == 'fawe' ]] ;then
 	from_host=$fawe
 	to_host=$rage
 	ssh_port=175
+elif [[ $1 == 'uni' ]] ;then
+	name="uni"
+	from_host=$uni
+	to_host=$kos2
+	ssh_port=22
 else
-	error_msg "" "Host $1 is not known!!!" "FATAL"
+	message "" "Host '$1' is not known!!!" "FATAL"
 fi 
 
 # task settings
@@ -53,7 +63,13 @@ elif [[ $2 == 'db' ]] ;then
 	bu_dir="/$bu_path/$name/postgres"
 	excludes="$exclude_path/exclude-db"
 	task_opt="-x"
+elif [[ $2 == 'test' ]] ;then
+	task='test'
+	from_path="/home/widu/bu-test"
+	bu_dir="/$bu_path/$name/test"
+	excludes="$exclude_path/exclude-db"
+	task_opt="-x"
 else
- 	error_message "" "task $2 is not known!!!" "FATAL"
+ 	message "" "task $2 is not known!!!" "FATAL"
 fi 
 
