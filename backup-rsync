@@ -2,22 +2,18 @@
 #TODO: Checken ob platte ro gemountet ist zu remounten.
 #
 # set path for log-files and logger-opts
-log_opts="-t Backup"
+log_tag="Backup"
 
 echo -e "\n##### $(date): Starting '$0 $@' #####"
-logger $log_opts "Starting '$0 $@'"
+logger -t $log_tag "Starting '$0 $@'"
 
 # load necessary functions
 . backup_functions
 
 # Usage: backup-rsync <HOST> <TASK> <SCHEDULE>
 if [[ $# != 3 ]] ; then
-	#error_message ' ' "'Usage error'" "FATAL"
-	error_message ' ' "'Usage $0 <host> <task> <schedule> but call was: $0 $@'" "FATAL"
-	#error_message ' ' "Usage $0 <host> <task> <schedule> but call was: $0 $@" "FATAL"
+	error_message " " "Usage $0 <host> <task> <schedule> but call was: $0 $(echo $@)" "FATAL"
 fi
-echo "test"
-exit
 
 # load settings
 . backup_definitions
@@ -30,7 +26,7 @@ if [[ $3 == 'daily' || $3 == 'weekly' || $3 == 'monthly' || $3 == 'yearly' ]] ; 
 	schedule=$3
 	bu_dir="$bu_dir/$schedule.0"
 else
-	error_message "" "schedule $3 is not known!!!" "FATAL"
+	error_message "" "schedule '$3' is not known!!!" "FATAL"
 fi
 
 # check free disk space
@@ -76,5 +72,5 @@ if $mount_ro ; then remount_bu_disk "$to_host" "$ssh_port" "$bu_path" "ro"; fi
 
 # ready
 echo "$0 $(date): Finished rsync backup for '$name $task $schedule'"
-logger "$0 Finished rsync backup for '$name $task $schedule'"
+logger -t $log_tag "$0 Finished rsync backup for '$name $task $schedule'"
 

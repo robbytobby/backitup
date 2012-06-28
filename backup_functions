@@ -107,16 +107,22 @@ write_error () {
 	local TYPE=$5
 
 	if [[ $EXIT_STATUS != 0 ]]; then
-	echo -e "EXIT:$EXIT_STATUS \n Caller:$CALLER \n String:$STRING \n level:$LEVEL \n type:$TYPE"
-		if [[ $TYPE == 'cmd' ]]; then 
-			echo "$LEVEL Error in $0#$CALLER: '$STRING' exited with status $EXIT_STATUS"
-			logger "$LEVEL Error in $0#$CALLER: '$STRING' exited with status $EXIT_STATUS"
-		elif [[ $TYPE == 'msg' ]]; then
-			echo "$LEVEL Error in $0#$CALLER: $STRING"
-			logger "$LEVEL Error in $2#$CALLER: $STRING"
+		if [ -z $CALLER ]; then
+			CALLER=$0
+		else
+			CALLER=$0#$CALLER
 		fi
+
+		echo -e "EXIT:$EXIT_STATUS \n Caller:$CALLER \n String:$STRING \n level:$LEVEL \n type:$TYPE"
+		if [[ $TYPE == 'cmd' ]]; then 
+			echo -e "$LEVEL Error in $CALLER: '$STRING' exited with status $EXIT_STATUS"
+			logger -t $log_tag "$LEVEL Error in $CALLER: '$STRING' exited with status $EXIT_STATUS"
+		elif [[ $TYPE == 'msg' ]]; then
+			echo -e "$LEVEL Error in $CALLER: $STRING"
+			logger -t $log_tag "$LEVEL Error in $CALLER: $STRING"
+		fi
+
 		if [[ $LEVEL == "FATAL" ]]; then 
-			echo 'Haha'
 			exit
 		else
 			return
