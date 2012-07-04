@@ -15,7 +15,7 @@ execute_remote_or_local () {
 		exit_status=$?
 	fi
 
-	echo $return_value
+	echo -n $return_value
 	return $exit_status
 }
 
@@ -26,6 +26,7 @@ check_disk_space () {
 	local inode_used_command="df -i $bu_path $pipe"
 	local hd_maxused=$((100-$hd_minfree_percent))
 
+	$verbose && message "" "checking free space on backup disk" "INFO"
 	# get used space
 	local hd_kb_used=$(execute_remote_or_local "$kb_used_command")
 	ssh_error_check $? "check_disk_space" "$kb_used_command" "Warning"
@@ -35,13 +36,14 @@ check_disk_space () {
 	
 	# compare to defined value
 	if [[ $hd_kb_used -ge $hd_maxused || $hd_inode_used -ge $hd_maxused ]] ; then
-		message "check_disk_space" "Erorr: Not enough space left in $bu_path on $to_host for rsyncing backups!" "FATAL"
+		message "check_disk_space" "Not enough space left in $bu_path on $to_host for rsyncing backups!" "FATAL"
 	fi
 }
 
 remount_bu_disk () {
+
 	# check correct usage
-	[ $# != 1 ] && { message "remount_bu_disk" "Usage: remount_bu_disk <ro/rw> Call was: remount_bu_disk $(echo $@)" "FATAL"; }
+	[ $# != 1 ] && message "remount_bu_disk" "Usage: remount_bu_disk <ro/rw> Call was: remount_bu_disk $(echo $@)" "FATAL"
 	local remount_state=$1
 
 	# get the mtab entry for the backup device
@@ -52,26 +54,30 @@ remount_bu_disk () {
 	local mount_state=$(echo $mtab_line | sed -e 's/.*(\(r[ow]\)).*/\1/')
 
 	# return on remount rw if device is allready rw
-	[ $remount_state == 'rw' && $mount_state == 'rw' ] && { return; }
+	[[ $remount_state == 'rw' && $mount_state == 'rw' ]] &&  return 
 
 	# get device name
 	local bu_device=$(echo $mtab_line | cut -d' ' -f1)
-	[ -z $bu_device ] && { message "remount_bu_disk" "Could not determine backup-device on $to_host" "FATAL"; }
+	[ -z $bu_device ] && message "remount_bu_disk" "Could not determine backup-device on $to_host" "FATAL"
 
 	# get file system
 	local fs_type=$(echo $mtab_line | cut -d' ' -f5)
-	[ -z $fs_type ] && { message "remount_bu_disk" "Could not determine filesystem of $bu_device on $to_host" "FATAL"; }
+	[ -z $fs_type ] && message "remount_bu_disk" "Could not determine filesystem of $bu_device on $to_host" "FATAL"
 
 	# built remount command
 	local remount_command="mount -t $fs_type -o remount,$remount_state $bu_device $bu_path"
 	
 	#remount
+	$verbose && message "" "remounting $bu_device on $to_host $remount_state" "INFO"
 	execute_remote_or_local "$remount_command"
 	ssh_error_check $? "remount_bu_disk" "$remount_command" "FATAL"
+	return
 }
+
 create_backup_directory () {
 	execute_remote_or_local "test -d $bu_dir"
 	if [[ $? != 0 ]]; then 
+		$verbose && message "" "creating needed directory $bu_dir" "INFO"
 		execute_remote_or_local "mkdir -p $bu_dir" 
 		ssh_error_check $? "" "mkdir -p $bu_dir" "FATAL"
 	fi
@@ -111,7 +117,7 @@ write_error () {
 	esac
 
 	echo -e $log_msg
-	logger -t $log_tag $log_msg
+	logger -t $log_tag "$log_msg"
 	[ $level = "FATAL" ] &&  exit
 }
 

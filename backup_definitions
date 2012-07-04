@@ -1,4 +1,5 @@
 #!/bin/bash
+verbose=true
 
 # define remote hosts if you want
 # xyz=""
@@ -54,6 +55,7 @@ esac
 task=$2
 bu_dir="/$bu_path/$name/$task"
 excludes="$exclude_path/exclude-$task"
+rsync_log="/var/log/backup/${name}_${task}.log"
 rsync_opts=""
 case "$task" in
 	# NAME)
