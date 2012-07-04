@@ -1,13 +1,12 @@
 #!/bin/bash
+# Usage: backup-rsync <HOST> <TASK> <SCHEDULE [d<NUM>:w<NUM>:m<NUM>:y<NUM>]
+#
 # load necessary functions
 . backup_functions
-
-# Usage: backup-rsync <HOST> <TASK> <SCHEDULE [d<NUM>:w<NUM>:m<NUM>:y<NUM>]
-message "" "Starting '$0 $(echo $@)' on $(date)" "INFO"
-
 # load settings
 . backup_definitions
 
+$verbose && message "" "Starting '$0 $(echo $@)' on $(date)" "INFO"
 
 # functions
 move_and_safe_timestamp () {
@@ -105,11 +104,11 @@ create_backup_directory
 
 # rotate!!!
 timestamp="$bu_dir/.timestamp"
-# yearly rotation on new years day
+# yearly rotation on day after new years day
 if $yearly && (( $(date +%j) == 186 )) ; then rotate "yearly" $num_yearly ; fi
-# monthly on the first
+# monthly on the second
 if $monthly &&  (( $(date +%d) == 4 )) ; then rotate "monthly" $num_monthly ; fi
-# weekly on sundays
+# weekly on mondays
 if $weekly && (( $(date +%w) == 3 )) ; then rotate "weekly" $num_weekly; fi
 # daily
 if $daily ; then rotate "daily" $num_daily; fi

@@ -1,4 +1,5 @@
 #!/bin/bash
+# if "false" output contains only error-messages, otherwise as well informational messages (success of actions)
 verbose=true
 
 # define remote hosts if you want

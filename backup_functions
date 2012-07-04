@@ -29,10 +29,10 @@ check_disk_space () {
 	$verbose && message "" "checking free space on backup disk" "INFO"
 	# get used space
 	local hd_kb_used=$(execute_remote_or_local "$kb_used_command")
-	ssh_error_check $? "check_disk_space" "$kb_used_command" "Warning"
+	ssh_error_check $? "check_disk_space" "$kb_used_command" "WARNING"
 	# get used inodes
 	local hd_inode_used=$(execute_remote_or_local "$inode_used_command")
-	ssh_error_check $? "check_disk_space" "$inode_used_command" "Warning"
+	ssh_error_check $? "check_disk_space" "$inode_used_command" "WARNING"
 	
 	# compare to defined value
 	if [[ $hd_kb_used -ge $hd_maxused || $hd_inode_used -ge $hd_maxused ]] ; then
@@ -118,7 +118,7 @@ write_error () {
 
 	echo -e $log_msg
 	logger -t $log_tag $log_msg
-	[ $level = "FATAL" ] &&  exit
+	[ $level = "FATAL" ] && exit
 
 }
 
