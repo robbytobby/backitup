@@ -26,6 +26,11 @@ hd_minfree_percent=20
 # mount backup partition read only after backup?
 mount_ro=true
 
+# TODO
+# define jobs
+# jobs=[ "fawe data", "fawe system", "rage data" "rage system" "rage postgres" ]
+# jobs.each do ...
+
 # Host settings
 name=$1
 ssh_port=22
@@ -83,4 +88,5 @@ case "$task" in
 		;;
 	*)	message "" "task $2 is not known!!!" "FATAL" ;;
 esac
+
 

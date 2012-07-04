@@ -1,0 +1,8 @@
+#!/bin/bash
+. backup_functions
+. backup_definitions
+
+# jobs.each do 
+# 	split string in NAME and TASK
+# 	backup-rsync NAME TASK (schedule)
+#       backup-rotate NAME TASK (schedule)
