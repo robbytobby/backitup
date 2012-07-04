@@ -15,6 +15,8 @@ $verbose && message " " "Starting $0 $(echo $@) on $(date)" "INFO"
 . backup_definitions
 # check that at least one host is local
 [[ $from_host != $localhost && $to_host != $localhost ]] && message "" "rsync cannot handle a job with source and destination both on remote hosts" "FATAL"
+# check that exclude file exists
+! [ -f $excludes ] && message "" "missing exclude file '$excludes'" "FATAL"
 
 # extra_rsync_opts="--bwlimit=256"
 extra_rsync_opts="-n"

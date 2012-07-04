@@ -3,17 +3,19 @@
 . backup_functions
 
 # Usage: backup-rsync <HOST> <TASK> <SCHEDULE [d<NUM>:w<NUM>:m<NUM>:y<NUM>]
-message " " "Starting '$0 $(echo $@)' on $(date)" "INFO"
+message "" "Starting '$0 $(echo $@)' on $(date)" "INFO"
 
 # load settings
 . backup_definitions
 
 
+# functions
 move_and_safe_timestamp () {
 	local from=$1
 	local to=$2
 	
-	if [ -d $from ]; then
+	$verbose && message "" "moving $from to $to (on $to_host)" "INFO"
+	if execute_remote_or_local "test -d $from" ; then
 		execute_remote_or_local "touch $timestamp -r $from"
 		execute_remote_or_local "mv $from $to"
 		ssh_error_check $? "move_and_safe_timestamp" "mv $from $to" "FATAL"
@@ -32,6 +34,7 @@ rotate () {
 
 	execute_remote_or_local "test -d $to_remove"
 	if [ $? = 0 ] ; then 
+		$verbose && message "" "removing $to_remove" "INFO"
 		execute_remote_or_local "rm -rf $to_remove"
 		ssh_error_check $? "rotate" "rm $to_remove" "FATAL"
 	fi
@@ -55,7 +58,8 @@ rotate () {
 	# copy newest snapshot via hardlinks from level-1 to level-0
 		local LAST=$bu_dir/$schedule.1
 		local TO=$bu_dir/$schedule.0
-		if [ -d $LAST ] ; then
+		if execute_remote_or_local "test -d $LAST" ; then
+			$verbose && message "" "preparing $LAST for new rsync run (on $to_host)" "INFO"
 			execute_remote_or_local "touch $timestamp -r $LAST"
 			execute_remote_or_local "cp -al $LAST $TO"
 			ssh_error_check $? "rotate" "cp $LAST $TO" "FATAL"
@@ -102,16 +106,16 @@ create_backup_directory
 # rotate!!!
 timestamp="$bu_dir/.timestamp"
 # yearly rotation on new years day
-if $yearly && [ $(date +%j) == 1 ] ; then rotate "yearly" $num_yearly ; fi
+if $yearly && (( $(date +%j) == 186 )) ; then rotate "yearly" $num_yearly ; fi
 # monthly on the first
-if $monthly &&  [ $(date +%d) = 1 ] ; then rotate "monthly" $num_monthly ; fi
+if $monthly &&  (( $(date +%d) == 4 )) ; then rotate "monthly" $num_monthly ; fi
 # weekly on sundays
-if $weekly && [ $(date +%w) = 0 ] ; then rotate "weekly" $num_weekly; fi
+if $weekly && (( $(date +%w) == 3 )) ; then rotate "weekly" $num_weekly; fi
 # daily
 if $daily ; then rotate "daily" $num_daily; fi
 
 # remount disk ro if necessary
-[ $mount_ro ] && remount_bu_disk "ro"
+$mount_ro && remount_bu_disk "ro"
 
 # Ready
-message " " "Finished '$0 $(echo $@)' on $(date)" "INFO"
+$verbose && message " " "Finished '$0 $(echo $@)' on $(date)" "INFO"

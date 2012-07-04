@@ -117,7 +117,8 @@ write_error () {
 	esac
 
 	echo -e $log_msg
-	logger -t $log_tag "$log_msg"
+	logger -t $log_tag $log_msg
 	[ $level = "FATAL" ] &&  exit
+
 }
 
