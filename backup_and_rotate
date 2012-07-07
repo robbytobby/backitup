@@ -1,8 +1,45 @@
 #!/bin/bash
-. backup_functions
-. backup_definitions
 
-# jobs.each do 
-# 	split string in NAME and TASK
-# 	backup-rsync NAME TASK (schedule)
-#       backup-rotate NAME TASK (schedule)
+# load necessary functions
+. backup_functions
+
+# default values
+default_exclude_path=$(dirname $0)
+default_verbose=false
+default_port=22
+default_log_tag="Backup"
+default_check_free_space=true
+default_minimal_disk_space=10
+default_mount_ro=true
+
+# read configuration
+i=-1
+set_defaults=false
+while read line; do
+	# remove all white space
+	line=$(echo $line | sed -e 's/ //g')
+	if [[ "$line" =~ ^\[default\]$ ]]; then
+	       	set_defaults=true
+	elif [[ "$line" =~ ^\[.*\]$ ]]; then
+		set_defaults=false
+		((i++))
+		job[i]=$(echo $line | sed -e 's/\[\([a-z_-]*\)\]/\1/')
+	elif [[ "$line" =~ ^[^#]*=*$ ]]; then
+		key=$(echo ${line%%=*})
+		value=$(echo ${line##*=})
+		if $set_defaults; then
+			declare default_$key=$value
+		else
+			declare cfg_$key[i]=$value
+		fi
+	fi
+done < backup.cfg
+
+i=0
+for name in ${job[@]}; do
+	$verbose && message " " "Starting $name on $(date)" "INFO"
+	backup_and_rotate
+	$verbose && message " " "Finished $name on $(date)" "INFO"
+	((i++))
+done
+

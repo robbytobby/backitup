@@ -1,3 +1,0 @@
-/usr/local/sbin/backup-rsync rage system weekly &>>/var/log/backup/rage-system-weekly.log
-/usr/local/sbin/backup-rsync fawe system weekly &>>/var/log/backup/fawe-system-weekly.log
-

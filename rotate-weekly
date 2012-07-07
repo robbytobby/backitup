@@ -1,6 +1,0 @@
-#!/bin/bash
-if [[ $(hostname) == 'fahrradwerkstatt' ]]; then
-	backup-rotate rage system w4:m11:y10 
-elif [[ $(hostname) == 'radgeber' ]]; then
-	backup-rotate fawe system w4:m11:y10 
-fi
