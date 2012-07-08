@@ -28,29 +28,30 @@ done
 i=-1
 set_defaults=false
 while read line; do
-	# remove all white space and comments
-	line=$(echo $line | sed -e 's/#.*$//g;s/ //g')
+	# remove comments, all leading and trailing white space and whitespace around '='
+	line=$(echo $line | sed -e 's/#.*$//;s/^ *//g;s/ *$//g;s/ *\(=\) */=/g')
 	# got to next line if line is empty
-	! [ $line ] && continue
+	! [ "$line" ] && continue
 
 	# default section?
-	if [[ "$line" =~ ^\[default\]$ ]]; then
+	if [[ "$line" =~ ^\[\ *default\ *\]$ ]]; then
 		set_defaults=true
 	# jog definition section?
 	elif [[ "$line" =~ ^\[.*\]$ ]]; then
 		((i++))
 		set_defaults=false
-		job[i]=$(echo $line | sed -e 's/\[\(.*\)\]/\1/')
+		# remove [] and leading and trailing white space
+		job[i]=$(echo $line | sed -e 's/\[ *\([^ ]*\) *\]/\1/')
  	# key value pair ?
-	elif [[ "$line" =~ ^[^#]*=*$ ]]; then
+	elif [[ "$line" =~ ^.*=.*$ ]]; then
 		key="${line%%=*}"
 		value="${line##*=}"
 		# accept only valid keys
 		! check_key $key && continue
 		if $set_defaults; then
-			declare default_$key=$value
+			declare default_$key="$value"
 		else
-			declare cfg_$key[i]=$value
+			declare cfg_$key[i]="$value"
 		fi
 	fi
 done < $config_file
