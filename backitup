@@ -43,8 +43,8 @@ while read line; do
 		job[i]=$(echo $line | sed -e 's/\[\(.*\)\]/\1/')
  	# key value pair ?
 	elif [[ "$line" =~ ^[^#]*=*$ ]]; then
-		key=$(echo "${line%%=*}")
-		value=$(echo " ${line##*=}" | sed -e 's/ //g') # get around 'echo "-n"' issue
+		key="${line%%=*}"
+		value="${line##*=}"
 		# accept only valid keys
 		! check_key $key && continue
 		if $set_defaults; then
