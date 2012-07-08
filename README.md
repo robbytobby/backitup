@@ -7,7 +7,7 @@ written by: robbytobby on 25.6.2012
 
 usage:
 just call the script in the crontab:
-	backitup [ -f CONFIG-FILE ]
+backitup [ -f CONFIG-FILE ]
 if -f is not present it defaults to "backitup.cfg"
 
 see backitup.cfg for options
