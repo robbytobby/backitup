@@ -186,11 +186,11 @@ schedule_name () {
 should_it_run? () {
 	if [[ $interval == "daily" ]]; then 
 		echo true
-	elif [[ $interval == "weekly"  && $(date +%w) == 6 ]]; then 
+	elif [[ $interval == "weekly"  && $(date +%w) = 0 ]]; then 
 		echo true
 	elif [[ $interval == "monthly" && $(date +%d) == 01 ]]; then 
 		echo true 
-	elif [[ $interval == "yearly"  && $(date +%j) == 1 ]]; then
+	elif [[ $interval == "yearly"  && $(date +%j) == 001 ]]; then
 	       	echo true
 	else
 		echo false
