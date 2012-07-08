@@ -1,9 +1,10 @@
 #!/bin/bash
 
 # load necessary functions
-. backup_functions
+. backitup.functions
 
 # default values
+config_file="backitup.cfg"
 default_exclude_path=$(dirname $0)
 default_verbose=false
 default_port=22
@@ -12,34 +13,54 @@ default_check_free_space=true
 default_minimal_disk_space=10
 default_mount_ro=true
 
-# read configuration
+# parse options; for the time being, theres only "-f" to specify a custom config file
+while getopts ":f:" opt; do
+	case $opt in
+		f)  config_file=$OPTARG ;;
+		\?) echo "Invalid option: -$OPTARG; just ignoring this" ;;
+		:)  echo "Option -$OPTARG requires an argument"; exit ;;
+	esac
+done
+# exit if config file does not exist
+! [ -f $config_file ] && echo "Could not find the configuration file '$config_file'" && exit
+
+# read config file
 i=-1
 set_defaults=false
 while read line; do
-	# remove all white space
-	line=$(echo $line | sed -e 's/ //g')
+	# remove all white space and comments
+	line=$(echo $line | sed -e 's/#.*$//g;s/ //g')
+	# got to next line if line is empty
+	! [ $line ] && continue
+
+	# default section?
 	if [[ "$line" =~ ^\[default\]$ ]]; then
-	       	set_defaults=true
+		set_defaults=true
+	# jog definition section?
 	elif [[ "$line" =~ ^\[.*\]$ ]]; then
-		set_defaults=false
 		((i++))
-		job[i]=$(echo $line | sed -e 's/\[\([a-z_-]*\)\]/\1/')
+		set_defaults=false
+		job[i]=$(echo $line | sed -e 's/\[\(.*\)\]/\1/')
+ 	# key value pair ?
 	elif [[ "$line" =~ ^[^#]*=*$ ]]; then
 		key=$(echo ${line%%=*})
 		value=$(echo ${line##*=})
+		# accept only valid keys
+		! check_key $key && continue
 		if $set_defaults; then
 			declare default_$key=$value
 		else
 			declare cfg_$key[i]=$value
 		fi
 	fi
-done < backup.cfg
+done < $config_file
 
+# run all defined jobs
 i=0
 for name in ${job[@]}; do
-	$verbose && message " " "Starting $name on $(date)" "INFO"
-	backup_and_rotate
-	$verbose && message " " "Finished $name on $(date)" "INFO"
+	fatal=false
+	# wrap the main function in a subshell, so that an "exit" just terminates the subshell not the complete script
+	( backup_and_rotate )
 	((i++))
 done
 

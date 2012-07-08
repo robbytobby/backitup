@@ -22,9 +22,10 @@ write_error () {
 		msg)     log_msg="$level $func_name: $msg" ;;
 	esac
 
+	[ "$level" = "FATAL" ] && log_msg+=" - ABORTING $name !!!"
 	echo -e $log_msg
 	logger -t $log_tag -- $log_msg
-	[ $level = "FATAL" ] && exit
+	[ "$level" = "FATAL" ] && echo && exit
 }
 
 # some wrappers arround write_error
@@ -38,6 +39,34 @@ ssh_error_check () {
 
 message () {
 	write_error -1 "$@" 'msg'
+}
+
+# check the keys given in config file
+check_key () {
+	local valid_keys=( src_host dest_host bu_base_dir src_dir schedule verbose log_tag check_free_space \
+	       		   minimal_disk_space mount_ro rsync_opts extra_rsync_opts exclude_path exclude_file global_exclude_file \
+		   	   port )
+	local found=1
+	for string in "${valid_keys[@]}"; do
+		[ "$1" = "$string" ] && found=0
+	done
+	[ $found = 1 ] && message "" "Invalid key '$1' found in configuration file - ignoring this" "WARNING"
+	return $found
+}
+
+# check if configuration for a job is complete (not very elegant)
+check_job_definition () {
+	local key=''
+	local needed_keys=( src_host dest_host bu_base_dir src_dir schedule verbose log_tag check_free_space \
+	       		   minimal_disk_space mount_ro exclude_path port )
+	local needed_values=( "$src_host" "$dest_host" "$bu_base_dir" "$src_dir" "$schedule" "$verbose" "$log_tag" "$check_free_space" \
+	       		   "$minimal_disk_space" "$mount_ro" "$exclude_path" "$port" )
+	local j=0
+	for key in "${needed_keys[@]}"; do
+		local value=$( echo ${needed_values[j]} | sed -e "s/''//g" -e 's/""//g' )
+		[ -z $value ] && message "" "Value for '$key' is missing or empty for '$name' " "FATAL"
+		((j++))
+	done
 }
 
 
@@ -65,8 +94,8 @@ execute_remote_or_local () {
 check_disk_space () {
 	# built the command strings to to get percentage of inodes space and inodes
 	local pipe="| tail -n1 | sed -e 's/.* \([0-9]\{1,3\}\)%.*/\1/'"
-	local kb_used_command="df $bu_path $pipe"
-	local inode_used_command="df -i $bu_path $pipe"
+	local kb_used_command="df $bu_base_dir $pipe"
+	local inode_used_command="df -i $bu_base_dir $pipe"
 	local hd_maxused=$((100-$minimal_disk_space))
 
 	$verbose && message "" "checking free space on backup disk" "INFO"
@@ -79,7 +108,7 @@ check_disk_space () {
 	
 	# compare to defined value
 	if [[ $hd_kb_used -ge $hd_maxused || $hd_inode_used -ge $hd_maxused ]] ; then
-		message "check_disk_space" "Not enough space left in $bu_path on $dest_host for rsyncing backups!" "FATAL"
+		message "check_disk_space" "Not enough space left in $bu_base_dir on $dest_host for rsyncing backups!" "FATAL"
 	fi
 }
 
@@ -90,8 +119,8 @@ remount_bu_disk () {
 	local remount_state=$1
 
 	# get the mtab entry for the backup device
-	local mtab_line=$(execute_remote_or_local "mount | grep $bu_path")
-	ssh_error_check $? "remount_bu_disk" "mount | grep $bu_path" "FATAL"
+	local mtab_line=$(execute_remote_or_local "mount | grep $bu_base_dir")
+	ssh_error_check $? "remount_bu_disk" "mount | grep $bu_base_dir" "FATAL"
 
 	# get the current mount state
 	local mount_state=$(echo $mtab_line | sed -e 's/.*(\(r[ow]\)).*/\1/')
@@ -108,7 +137,7 @@ remount_bu_disk () {
 	[ -z $fs_type ] && message "remount_bu_disk" "Could not determine filesystem of $bu_device on $dest_host" "FATAL"
 
 	# built remount command
-	local remount_command="mount -t $fs_type -o remount,$remount_state $bu_device $bu_path"
+	local remount_command="mount -t $fs_type -o remount,$remount_state $bu_device $bu_base_dir"
 	
 	#remount
 	$verbose && message "" "remounting $bu_device on $dest_host $remount_state" "INFO"
@@ -128,6 +157,7 @@ create_backup_directory () {
 	fi
 }
 
+# does what it says
 cp_or_move_and_save_timestamp () {
 	local from=$1
 	local to=$2
@@ -141,7 +171,7 @@ cp_or_move_and_save_timestamp () {
 	fi
 }
 
-
+# expand the schedule abbreviation to full name
 schedule_name () {
 	case "$1" in
 		d) echo "daily";;
@@ -152,6 +182,7 @@ schedule_name () {
 	esac
 }
 
+# define on which day a job interval runs
 should_it_run? () {
 	if [[ $interval == "daily" ]]; then 
 		echo true
@@ -166,10 +197,12 @@ should_it_run? () {
 	fi
 }
 
+# the main rsync part
 run_rsync () {
 	local dest_dir="$bu_dir/$interval.0"
-	local rsync_log="/var/log/backup/$name.log"
-	! [ -d '/var/log/backup' ] && mkdir '/var/log/backup'
+	local rsync_log_dir="/var/log/backup"
+	local rsync_log="$rsync_log_dir/$name.log"
+	! [ -d $rsync_log_dir ] && mkdir $rsync_log_dir
 	# built destination and source string for rsync
 	if [ $src_host != $localhost ]; then from="$src_host:$src_dir"; else from=$src_dir; fi
 	if [ $dest_host != $localhost ]; then to="$dest_host:$dest_dir"; else to=$dest_dir; fi
@@ -182,20 +215,19 @@ run_rsync () {
 	$verbose && message "" "starting rsync for '$name $interval'" "INFO"
 	echo -e "\n### $(date) " >> $rsync_log
 
-    rsync  -avz --numeric-ids --rsh="ssh -p$port" --delete --delete-excluded   \
-         $exclude $rsync_opts $extra_rsync_opts $from $to &>> $rsync_log
+	rsync  -avz --numeric-ids --rsh="ssh -p$port" --delete --delete-excluded   \
+		$exclude $rsync_opts $extra_rsync_opts $from $to &>> $rsync_log
 	
 	# check exit status: 0 = okay, 24 harmless (e.g. files being changed during run-time)
 	if [ $? = 24 -o $? = 0 ]; then
-		$verbose && message "" "rsync for '$name $interval' finished without errors!" "INFO"
+		$verbose && message "" "rsync for '$name $interval' finished successfully" "INFO"
 	else
-	    message "" "rsync for $task $interval' finished with errors!" "CRITICAL"
+		message "" "rsync for $task $interval' finished with errors!" "CRITICAL"
 	fi
 	echo -e "### $(date) \n" >> $rsync_log
 
 	# save backup date
 	execute_remote_or_local "touch $dest_dir"
-
 }
 
 #the main rotation
@@ -204,7 +236,6 @@ rotate () {
 
 	# delete the oldest snapshot if necessary
 	local to_remove="$bu_base.$num"
-	execute_remote_or_local "test -d $to_remove"
 	if execute_remote_or_local "test -d $to_remove"; then 
 		$verbose && message "" "removing $to_remove" "INFO"
 		execute_remote_or_local "rm -rf $to_remove"
@@ -235,10 +266,10 @@ rotate () {
 }
 
 backup_and_rotate () {
-	local name=${job[i]}
+	local name=$name
 	# overwrite defaults if necessary
-	local bu_path=${cfg_bu_dir[i]:-$default_bu_dir}
-	local bu_dir=$bu_path/$name
+	local bu_base_dir=${cfg_bu_base_dir[i]:-$default_bu_base_dir}
+	local bu_dir=$bu_base_dir/$name
 	local src_host=${cfg_src_host[i]:-$default_src_host}
 	local dest_host=${cfg_dest_host[i]:-$default_dest_host}
 	local src_dir=${cfg_src_dir[i]:-$default_src_dir}
@@ -255,32 +286,40 @@ backup_and_rotate () {
 	local mount_ro=${cfg_mount_ro[i]:-$default_mount_ro}
 	local minimal_disk_space=${cfg_minimal_disk_space[i]:-$default_minimal_disk_space}
 
+	check_job_definition
+
 	local timestamp="$bu_dir/.timestamp"
 	local smallest_interval=$(schedule_name ${schedule:0:1})
 
-	firstrun=true
+	# run job on intervals defined in $schedule
+	did_run=false
 	for setting in $(echo $schedule | tr ":" "\n"); do
 		local interval=$(schedule_name ${setting:0:1})
 		local num=${setting:1}
 		if $(should_it_run?); then
-			if $firstrun; then
+			# on the first loop do the disk_check and remount stuff
+			if ! $did_run; then
+				$verbose && message " " "Starting $name on $(date)" "INFO"
 				$check_free_space && check_disk_space
 				remount_bu_disk "rw"
 				create_backup_directory
 			fi
 			rotate
 			run_rsync
-			firstrun=false
+			did_run=true
 		fi
 		local last_interval=$interval
 	done
 
-	# only necessary if the job did run at least once
-	if ! $firstrun; then
-		# just to be sure
-		execute_remote_or_local "sync"
+	# return if nothing there was nothing to do
+	! $did_run && return
 
-		# remount disk ro if necessary
-		$mount_ro && remount_bu_disk "ro"
-	fi
+	# just to be sure
+	execute_remote_or_local "sync"
+
+	# remount disk ro if necessary
+	$mount_ro && remount_bu_disk "ro"
+
+	$verbose && message " " "Finished $name on $(date)" "INFO"
+	$verbose && echo
 }
