@@ -220,14 +220,13 @@ run_rsync () {
 	
 	# check exit status: 0 = okay, 24 harmless (e.g. files being changed during run-time)
 	if [ $? = 24 -o $? = 0 ]; then
-		$verbose && message "" "rsync for '$name $interval' finished successfully" "INFO"
+		# save backup date
+		execute_remote_or_local "touch $dest_dir"
+		message "" "rsync for '$name $interval' finished successfully" "INFO"
 	else
 		message "" "rsync for $task $interval' finished with errors!" "CRITICAL"
 	fi
 	echo -e "### $(date) \n" >> $rsync_log
-
-	# save backup date
-	execute_remote_or_local "touch $dest_dir"
 }
 
 #the main rotation
